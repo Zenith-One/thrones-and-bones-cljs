@@ -217,7 +217,7 @@
   (let [coords (:coords piece)
         [x y] coords]
     (if (<= y 0)
-      (do (prn "piece is at the top" coords) [])
+      []
       (let [[mx my] (my-search board pieces predicate
                                (get-next-coords coords second dec) second dec)]
         (for [fx [x]
@@ -228,7 +228,7 @@
   (let [coords (:coords piece)
         [x y] coords]
     (if (>= y 8)
-      (do (prn "piece is at the bottom" coords) [])
+      []
       (let [[mx my] (my-search board pieces predicate
                                (get-next-coords coords second inc)
                                second inc)]
@@ -240,7 +240,7 @@
   (let [coords (:coords piece)
         [x y] coords]
     (if (<= x 0)
-      (do (prn "piece is at the left" coords) [])
+      []
       (let [[mx my] (my-search board pieces predicate
                                (get-next-coords coords first dec)
                                first dec)]
@@ -252,7 +252,7 @@
   (let [coords (:coords piece)
         [x y] coords]
     (if (>= x 8)
-      (do (prn "piece is at the right" coords) [])
+      []
       (let [[mx my] (my-search board pieces predicate
                                (get-next-coords coords first inc)
                                first inc)]
@@ -331,8 +331,7 @@
         blocked-left (white-leader-blocked? board pieces coords dec identity)
         blocked-right (white-leader-blocked? board pieces coords inc identity)]
     (if (and blocked-up blocked-down blocked-left blocked-right)
-      coords
-      (prn "white leader is not captured:" blocked-up blocked-down blocked-left blocked-right))))
+      coords)))
 
 (defn do-captures! [coords]
   (let [board (:board @app-state)
@@ -387,7 +386,6 @@
         (move-piece! selected [x y])))))
 
 (defn handle-click-piece! [x y]
-  (println "clicked" [x y])
   (if (= :playing (:state @app-state))
     (let [turn (:turn @app-state)
           selected (:selected @app-state)
@@ -566,6 +564,7 @@
                            (apply conj rendered-pieces (render-labels))
                            turn-indicator)
                     squares))))
+
     (bottom-content :about (:bottom-section @page-state)
                     [:div
                      [:h2 "A new take on an ancient game"]
@@ -579,25 +578,28 @@
                            :target "_blank"}
                        "Hnefatafl - The Game of the Vikings"]
                       ". There is a lot of really interesting information there."]])
+
     (bottom-content :rules (:bottom-section @page-state)
                     [:div
                      [:h2 "Rules"]
                      [:p "The majority of the rules for this game are standard for hnefatafl games in general, which you can check out "
                       [:a {:href "http://tafl.cyningstan.com/page/20/a-rule-book-for-hnefatafl"} "here"] ". Here are the basics:"
-                      [:ul
+                      [:ol
                        [:li "The Jarl player (white) goes first. The Draug player (black) goes second."]
                        [:li "Pieces move up, down, left, or right as many squares as they wish."]
                        [:li "Pieces may not move through other pieces."]
                        [:li "You may capture one or more enemy pieces by moving in such a way as to have an enemy piece sandwiched between two of yours."
-                        [:ul [:li "Captures are only actively made, so if you move one of your pieces between two enemy pieces, you are not immediately captured."]]]
+                        [:ol {:type "a"}
+                         [:li "Captures are only actively made, so if you move one of your pieces between two enemy pieces, you are not immediately captured."]
+                         [:li "A single move may capture more than one enemy piece if that move causes more than one piece to be individually sandwiched between your pieces"]]]
                        [:li "The Jarl escapes when he makes it to one of the normal squares at the edge of the board."]
                        [:li "The draug win when the Jarl is captured (see below)."]
                        [:li "If at any time one side has no valid moves, or if the only valid move would cause the same series of moves to be made by both players, it is a draw."]]]
                      [:p "Thrones and Bones adds several new elements to the game:"
-                      [:ul
+                      [:ol
                        [:li "The Black Draug may move to any unoccupied square on the board. This is an exception to every move restriction imposed on other pieces."]
                        [:li "However, if The Black Draug is captured, the Jarl wins."]
-                       [:li "The Jarl's starting square is the castle. Any piece may move through the castle, but only the Jarl may stop there."]
+                       [:li "The Jarl's starting square is the castle. Any white piece may move through the castle, but only the Jarl may stop there."]
                        [:li "The draug starting squares are burial mounds. No piece may move onto or over a burial mound, unless that piece is a draug who has not yet moved onto a normal square."]
                        [:li "The Jarl can be captured if he is surrounded by any combination of draug pieces and non-normal terrain (e.g. castle or burial mounds)."]]]])
     (bottom-content :instructions (:bottom-section @page-state)
