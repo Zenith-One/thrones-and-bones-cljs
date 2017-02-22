@@ -8,3 +8,40 @@
     width: 100%;
 }
 
+.bottom-link-container {
+    display: inline-block;
+    width: 33%;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.bottom-link-container a,
+.bottom-link-container a:visited,
+.bottom-link-container a:active {
+    text-decoration: none;
+    color: #333;
+}
+
+.bottom-link-container a::before { content: "[" }
+.bottom-link-container a::after { content: "]"; }
+
+.bottom-link-container a:hover,
+.bottom-link-container a.active { text-decoration: underline; }
+
+.bottom-content-container h2 { text-align: center; }
+
+.button {
+    background-color: #f88;
+    border: 1px solid #d55;
+    color: white;
+    padding: 15px 20px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+}
+
+.button.game-over {
+    background-color: #2a2;
+    border-color: #282;
+}

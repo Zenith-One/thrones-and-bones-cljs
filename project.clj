@@ -46,7 +46,7 @@
                ;; lein cljsbuild once min
                {:id "min"
                 :source-paths ["src"]
-                :compiler {:output-to "resources/public/js/compiled/thrones_bones.js"
+                :compiler {:output-to "js/compiled/thrones_bones.js"
                            :main thrones-bones.core
                            :optimizations :advanced
                            :pretty-print false}}]}

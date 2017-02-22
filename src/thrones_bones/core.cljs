@@ -3,12 +3,45 @@
 
 (enable-console-print!)
 
+;; ======== sound/music ========
+;; wood door - https://www.freesound.org/people/ninebilly/sounds/173018/
+;; war drums - https://www.freesound.org/people/Matt%20Namer/sounds/93750/
+;; an dro - https://www.freesound.org/people/Kyster/sounds/197113/
+;; tavern ambience - https://www.freesound.org/people/Robinhood76/sounds/209354/
+
 ;; CONFIG
 (def white-color "#fafafa")
 (def black-color "#444")
-(def normal-color "#efeada")
-(def mound-color "#908778")
-(def castle-color "#bdb58e")
+(def terrain-color {:normal "#efeada"
+                    :mound "#908778"
+                    :castle "#bdb58e"})
+(def selected-color {:normal "#efeafa"
+                     :mound  "#9087ab"
+                     :castle "#bdb5af"})
+
+(defn get-by-id [id]
+  (.getElementById js/document id))
+
+(def sounds
+  {:fanfare (get-by-id "fanfare")
+   :drum (get-by-id "drum")
+   :piece-click (get-by-id "piece-click")
+   :piece-select (get-by-id "piece-select")
+   :music (get-by-id "ambient-music")})
+
+(defn play-sound [key]
+  (.play (key sounds)))
+
+(defn stop-sound [key]
+  (.pause (key sounds)))
+
+(defonce page-state (atom {:bottom-section :none
+                             :mute-music false
+                             :mute-sound false}))
+(defn play-sfx [key]
+  (if (not (:mute-sound @page-state))
+    (play-sound key)))
+
 ;; copied from:
 ;; https://clojuredocs.org/clojure.core/conj#example-56a6799ee4b060004fc217b0
 (def vec-join (comp vec flatten conj))
@@ -19,8 +52,12 @@
           base
           settings-pairs))
 
-;; define your app data so that it doesn't get over-written on reload
+(defn exists-in? [seq item]
+  (if (or (nil? seq) (nil? item))
+    false
+    (contains? (zipmap seq (repeat true)) item)))
 
+;; Board building
 (def board-template
   [[0 0 0 1 1 1 0 0 0]
    [0 0 0 0 1 0 0 0 0]
@@ -46,6 +83,7 @@
   (vec (map #(vec (map template->square %))
             board-template)))
 
+;; Initial Pieces
 (defn new-piece
   ([team x y] (new-piece team x y false))
   ([team x y leader]
@@ -56,26 +94,29 @@
 (defn starting-pieces []
   (let [black
         (map #(apply (partial new-piece :black) %)
-         [[3 0] [4 0] [5 0] [4 1]
-          [0 3] [0 4] [0 5] [1 4]
-          [3 8] [4 8] [5 8] [4 7]
-          [8 3] [8 4] [8 5]])
-        black-leader [(new-piece :black 7 4 true)]
+             [[7 4 true] ;; leader
+              [3 0] [4 0] [5 0] [4 1]
+              [0 3] [0 4] [0 5] [1 4]
+              [3 8] [4 8] [5 8] [4 7]
+              [8 3] [8 4] [8 5]])
         white
         (map #(apply (partial new-piece :white) %)
-         [[4 2] [4 3] [2 4] [3 4]
-          [5 4] [6 4] [4 5] [4 6]])
-        white-leader [(new-piece :white 4 4 true)]
-        ]
-    (vec-join black black-leader white white-leader)))
+             [[4 4 true] ;; leader
+              [4 2] [4 3] [2 4] [3 4]
+              [5 4] [6 4] [4 5] [4 6]])
+        all-pieces (vec-join black white)]
+    all-pieces))
 
 (defn new-game-state []
    {:board (new-board)
     :pieces (starting-pieces)
-    :turn :white})
+    :turn :white
+    :state :playing})
 
 (defonce app-state (atom (new-game-state)))
 
+
+;; Win Checking
 (defn filter-leader [pieces team]
   (first (filter #(and (= (:team %) team) (:leader %)) pieces)))
 
@@ -89,68 +130,442 @@
   (if (nil? (filter-leader pieces :white))
     :black))
 
-(prn "white win?" (check-white-win (:pieces @app-state)))
-(prn "black win?" (check-black-win (:pieces @app-state)))
+(defn next-game-state [pieces]
+  (or (check-white-win pieces)
+      (check-black-win pieces)
+      :playing))
 
-(defn game-over? [pieces]
-  (let [white 5]))
 
 (defn new-game! []
   (reset! app-state (new-game-state)))
 
+(defn change-turn! []
+  (swap! app-state assoc :turn (if (= (:turn @app-state) :white) :black :white)))
 
-(defn circle-conf [x y fill]
+;; ===== BOARD/PIECE CHECKING =====
+
+(defn is-the-piece-here? [piece x y]
+  (let [[px py] (:coords piece)]
+    (and (= x px) (= y py))))
+
+(defn get-piece-at-pos [pieces x y]
+  (filter #(is-the-piece-here? % x y)
+          pieces))
+
+(defn is-selecting-valid-piece? [selected turn piece]
+  (and (not (nil? piece)) (= (:team piece) turn)))
+
+(defn is-deselecting-piece? [selected piece]
+  (and (not (nil? piece))
+       (is-the-piece-here? piece (first selected) (second selected))))
+
+;; ======= EVENT HANDLING ========
+(defn get-next-coords [coords pos next-fn]
+  (if (= pos first)
+    [(next-fn (first coords)) (second coords)]
+    [(first coords) (next-fn (second coords))]))
+
+(defn reverse-direction [next-fn]
+  (if (= next-fn inc) dec inc))
+
+(defn get-default [coords]
+  (let [[ox oy] coords
+        x (if (>= ox 9) 8
+              (if (< ox 0) 0
+                  ox))
+        y (if (>= oy 9) 8
+              (if (< oy 0) 0
+                  oy))]
+    [x y]))
+
+(defn my-search [board pieces predicate coords pos next-fn]
+  "Given a board, a seq of pieces, a predicate function 
+   for filtering squares, a vector tuple of coordinates, 
+   a positional function (e.g. first or second) and a 
+   function to find the next value when recurring (e.g. inc or dec),
+   return the last valid square.
+
+   Predicate function should take a board square and possible piece"
+  (if (and (< (first coords) 9)
+           (< (second coords) 9)
+           (>= (first coords) 0)
+           (>= (second coords) 0))
+    (if (predicate (get-in board coords)
+                   (get-piece-at-pos pieces (first coords) (second coords)))
+      (recur board pieces predicate (get-next-coords coords pos next-fn)
+             pos next-fn)
+      (get-next-coords coords pos (reverse-direction next-fn))
+      )
+    (get-default coords)))
+
+(defn get-white-piece-predicate [original-piece]
+  (fn [terrain piece]
+    (let [valid-terrain (not= terrain :mound)
+          empty-square (empty? piece)]
+      (and valid-terrain empty-square))))
+
+(defn get-black-piece-predicate [original-piece]
+  (fn [terrain piece]
+    (let [is-leader (:leader original-piece)
+          has-moved (:has-moved original-piece)
+          valid-terrain (if has-moved
+                          (= terrain :normal)
+                          (not= terrain :castle))
+          is-empty (empty? piece)]
+      (if is-leader
+        true
+        (and valid-terrain is-empty)))))
+
+(defn get-valid-moves-up [board pieces piece predicate]
+  (let [coords (:coords piece)
+        [x y] coords]
+    (if (<= y 0)
+      (do (prn "piece is at the top" coords) [])
+      (let [[mx my] (my-search board pieces predicate
+                               (get-next-coords coords second dec) second dec)]
+        (for [fx [x]
+              fy (range my y)]
+          [fx fy])))))
+
+(defn get-valid-moves-down [board pieces piece predicate]
+  (let [coords (:coords piece)
+        [x y] coords]
+    (if (>= y 8)
+      (do (prn "piece is at the bottom" coords) [])
+      (let [[mx my] (my-search board pieces predicate
+                               (get-next-coords coords second inc)
+                               second inc)]
+        (for [fx [x]
+              fy (range (inc y) (inc my))]
+          [fx fy])))))
+
+(defn get-valid-moves-left [board pieces piece predicate]
+  (let [coords (:coords piece)
+        [x y] coords]
+    (if (<= x 0)
+      (do (prn "piece is at the left" coords) [])
+      (let [[mx my] (my-search board pieces predicate
+                               (get-next-coords coords first dec)
+                               first dec)]
+        (for [fx (range mx x)
+              fy [y]]
+          [fx fy])))))
+
+(defn get-valid-moves-right [board pieces piece predicate]
+  (let [coords (:coords piece)
+        [x y] coords]
+    (if (>= x 8)
+      (do (prn "piece is at the right" coords) [])
+      (let [[mx my] (my-search board pieces predicate
+                               (get-next-coords coords first inc)
+                               first inc)]
+        (for [fx (range (inc x) (inc mx))
+              fy [y]]
+          [fx fy])))))
+
+(defn get-valid-moves [board pieces piece]
+  (let [team (:team piece)
+        get-pred-fn (if (= team :white)
+                      get-white-piece-predicate
+                      get-black-piece-predicate)
+        predicate (get-pred-fn piece)
+        valid-up (get-valid-moves-up board pieces piece predicate)
+        valid-down (get-valid-moves-down board pieces piece predicate)
+        valid-left (get-valid-moves-left board pieces piece predicate)
+        valid-right (get-valid-moves-right board pieces piece predicate)
+        all-valid-moves
+        (concat valid-up valid-down valid-left valid-right)]
+    (if (or (not (= team :white))
+            (not (:leader piece)))
+      (remove #(= [4 4] %) all-valid-moves)
+      all-valid-moves)))
+
+;; Test get-valid-moves
+#_(let [board (:board @app-state)
+      pieces (:pieces @app-state)
+      piece (first (get-piece-at-pos pieces 4 4))]
+  (prn "all valid moves for" (:coords piece))
+  (prn (get-valid-moves board pieces piece)))
+
+(defn select-piece! [piece x y]
+  (let [board (:board @app-state)
+        pieces (:pieces @app-state)]
+    (swap! app-state assoc :selected [x y])
+    (play-sfx :piece-select)
+    (if (and (= (:team piece) :black) (:leader piece))
+      (swap! app-state assoc :valid-moves
+             (filter #(empty? (apply (partial get-piece-at-pos pieces)  %))
+                     (for [x (range 9)
+                           y (range 9)]
+                       [x y])))
+      (swap! app-state assoc :valid-moves
+             (get-valid-moves board pieces piece)))))
+
+(defn check-captures [pieces coords x-func y-func]
+  (let [[x y] coords
+        [tx ty] [(x-func x) (y-func y)]
+        [ox oy] [(x-func tx) (y-func ty)]
+        piece (first (get-piece-at-pos pieces x y))
+        target-piece (first (get-piece-at-pos pieces tx ty))
+        opposite-piece (first (get-piece-at-pos pieces ox oy))
+        team (:team piece)]
+    (if (and (not (nil? target-piece))
+             (not= (:team target-piece) team)
+             (not (and (:leader target-piece) (= (:team target-piece) :white)))
+             (not (nil? opposite-piece))
+             (= (:team opposite-piece) team))
+      [tx ty]
+      [])))
+
+(defn white-leader-blocked? [board pieces coords x-func y-func]
+  (let [[ox oy] coords
+        x (x-func ox)
+        y (y-func oy)
+        terrain (get-in board [x y])
+        piece (first (get-piece-at-pos pieces x y))]
+    (or (= terrain :mound)
+        (and (not (nil? piece)) (= (:team piece) :black)))))
+
+(defn white-leader-captured? [board pieces]
+  (let [wl (filter-leader pieces :white)
+        coords (:coords wl)
+        blocked-up (white-leader-blocked? board pieces coords identity dec)
+        blocked-down (white-leader-blocked? board pieces coords identity inc)
+        blocked-left (white-leader-blocked? board pieces coords dec identity)
+        blocked-right (white-leader-blocked? board pieces coords inc identity)]
+    (if (and blocked-up blocked-down blocked-left blocked-right)
+      coords
+      (prn "white leader is not captured:" blocked-up blocked-down blocked-left blocked-right))))
+
+(defn do-captures! [coords]
+  (let [board (:board @app-state)
+        pieces (:pieces @app-state)
+        captures-up (check-captures pieces coords identity dec)
+        captures-down (check-captures pieces coords identity inc)
+        captures-left (check-captures pieces coords dec identity)
+        captures-right (check-captures pieces coords inc identity)
+        white-leader (white-leader-captured? board pieces) 
+        all-captures
+          (filter #(not (empty? %))
+                  [captures-up captures-down captures-left captures-right white-leader])
+        new-pieces
+        (filter #(not (exists-in? all-captures (:coords %)))
+                (:pieces @app-state))]
+    (swap! app-state assoc :pieces new-pieces)))
+
+(defn handle-post-move! [pieces end]
+  (swap! app-state assoc :pieces pieces)
+  (swap! app-state assoc :selected nil)
+  (swap! app-state assoc :valid-moves [])
+  (do-captures! end)
+  (let [next-state (next-game-state (:pieces @app-state))]
+    (if (= :playing next-state)
+      (change-turn!)
+      (do
+        (swap! app-state assoc :state next-state)
+        (play-sfx :drum)))))
+
+(defn move-piece! [start end]
+  (let [pieces (:pieces @app-state)
+        [sx sy] start
+        [ex ey] end
+        target-terrain (get-in (:board @app-state) [ex ey])
+        current-piece (first (get-piece-at-pos pieces sx sy))
+        next-piece-pos (assoc current-piece :coords end)
+        next-piece (if (and (= (:team next-piece-pos) :black)
+                            (not= target-terrain :mound))
+                     (assoc next-piece-pos :has-moved true)
+                     next-piece-pos)]
+    (do (handle-post-move!
+         (conj (filter #(not= (:coords %) start) pieces) next-piece)
+         end)
+        (play-sfx :piece-click))))
+
+(defn handle-click-square! [x y]
+  (if (= :playing (:state @app-state))
+    (let [selected (:selected @app-state)
+          valid-moves (:valid-moves @app-state)
+          is-valid-move (exists-in? valid-moves [x y])]
+      (if (and selected is-valid-move)
+        (move-piece! selected [x y])))))
+
+(defn handle-click-piece! [x y]
+  (println "clicked" [x y])
+  (if (= :playing (:state @app-state))
+    (let [turn (:turn @app-state)
+          selected (:selected @app-state)
+          pieces (:pieces @app-state)
+          valid-moves (:valid-moves @app-state)
+          filtered (get-piece-at-pos pieces x y)
+          piece (if (empty? filtered) nil (first filtered))]
+      (if (is-selecting-valid-piece? selected turn piece)
+        (select-piece! piece x y))      
+      (if (is-deselecting-piece? selected piece) ;; clicking selected piece deselects
+        (do (swap! app-state assoc :selected nil)
+            (swap! app-state assoc :valid-moves [])))
+        )))
+
+
+
+;; ========== RENDERING ==========
+;; Piece Rendering
+(defn circle-conf [x y fill selected]
   {:r 0.3 :cx (+ x 0.45) :cy (+ y 0.45)
-   :fill fill :stroke "#000" :stroke-width 0.015})
+   :fill fill :stroke (if selected "#f00"  "#000")
+   :stroke-width 0.015
+   :on-click #(handle-click-piece! (- x 1) (- y 2))})
 
-(defn rect-conf [x y fill]
+(defn rect-conf [x y fill selected]
   {:height 0.7 :width 0.7 :x (+ x 0.1) :y (+ y 0.1)
-   :fill fill :stroke "#000" :stroke-width 0.015})
+   :fill fill :stroke (if selected "#f00" "#000")
+   :stroke-width 0.015
+   :on-click #(handle-click-piece! (- x 1) (- y 2))})
 
-(defn render-piece [piece]
-  (let [[x y] (:coords piece)
+(defn render-piece [selected piece]
+  (let [[ox oy] (:coords piece)
         [t c] (if (:leader piece)
                 [:rect rect-conf]
-                [:circle circle-conf])]
+                [:circle circle-conf])
+        y (+ oy 2)
+        x (+ ox 1)
+        selected (is-the-piece-here? piece (first selected) (second selected))]
     (case (:team piece)
-      :black [t (c x y black-color)]
-      :white [t (c x y white-color)]
+      :black [t (c x y black-color selected)]
+      :white [t (c x y white-color selected)]
       nil)))
 
-(defn render-pieces [pieces]
-  (map render-piece pieces))
+(defn render-pieces [pieces selected]
+  (map (partial render-piece selected) pieces))
 
-(defn render-square [x y color]
+;; Board Rendering
+(defn render-square [x y color stroke]
   [:rect {:width 0.9
           :height 0.9
           :fill color
           :x x
           :y y
-          :stroke "#666"
+          :stroke stroke
           :stroke-width 0.015
+          :on-click #(handle-click-square! (- x 1) (- y 2))
           }])
 
-(defn render-squares [board]
+(defn render-squares [board valid-moves]
   (for [x (range 9)
         y (range 9)]
-    (render-square
-       x y
-       (case (get-in board [x y])
-         :mound mound-color
-         :castle castle-color
-         normal-color))))
+    (let [is-valid-move (exists-in? valid-moves [x y])
+          terrain (get-in board [x y])
+          color-set (if is-valid-move selected-color terrain-color)
+          color (terrain color-set)]
+      (render-square (+ x 1) (+  y 2) color
+       (if (exists-in? valid-moves [x y])
+         "#66a"
+         "#666")))))
 
+(defn render-turn-indicator-circle [color state]
+  (render-piece [nil nil] {:coords [(if (= color :white) 2 6) -2]
+                    :team color
+                    :leader false}))
+
+(defn render-turn-indicator-text [turn state]
+  [:text {:x 4 :y 0.6
+          :text-length 3
+          :font-size 0.5}
+   (str (if (= turn :white) "White" "Black")
+        " "
+        (if (= state :playing) "Turn" "WINS!"))])
+
+(defn render-turn-indicator [turn state]
+  [(render-turn-indicator-circle turn state)
+   (render-turn-indicator-text turn state)])
+
+(defn row-labels [x]
+  (map (fn [y] [:text {:x x :y (+ y 2.6) :font-size 0.5} (str (inc y))])
+       (range 9)))
+
+(defn column-labels [y]
+  [:text {:x 1.2 :y y :text-length 9 :font-size 0.5} "ABCDEFGHI"])
+
+(defn render-labels []
+  (concat (row-labels 10.1)
+          (row-labels 0.6)
+   [(column-labels 1.8)] [(column-labels 11.4)]))
+
+(defn select-bottom-content! [key]
+  (swap! page-state assoc :bottom-section key))
+
+(defn bottom-link [href content-key label current]
+  [:span {:class "bottom-link-container"
+                      }
+   [:a {:href href :class (if (= content-key current) "active" "")
+        :on-click #(do (.preventDefault %)
+                       (select-bottom-content! content-key))} label]])
+
+(defn bottom-content [key current el]
+  (if (= key current)
+    el))
+
+(defn toggle-music! []
+  (swap! page-state assoc :mute-music (not (:mute-music @page-state)))
+  (if (:mute-music @page-state)
+    (stop-sound :music)
+    (play-sound :music)))
+
+(defn toggle-sound! []
+  (swap! page-state assoc :mute-sound (not (:mute-sound @page-state))))
+
+;; App Component
 (defn thrones-and-bones []
   [:div {:class "container"}
    [:center [:h1 "Thrones and Bones"]
-    (into 
-     (into
-      [:svg {:view-box "0 0 9 9"
-             :width "100%"
-             :style {:margin-top 20
-                     :max-width 500}}]
-      (render-squares (:board @app-state)))
-     (render-pieces (:pieces @app-state)))]   
+    [:div {:style {:margin-top 25 :margin-bottom 20}}
+     [:a {:href "#"
+          :class (str "button" (if (:mute-sound @page-state) "" " game-over"))
+          :on-click (fn [e] (toggle-sound!) (.preventDefault e))
+          :title (if (:mute-sound @page-state) "Enable sound" "Disable sound")}
+      [:i {:class "fa fa-volume-up"}] " "]
+     [:a {:class (str "button"
+                      (if (= (:state @app-state) :playing)
+                        ""
+                        " game-over"))
+          :on-click (fn [e] (new-game!) (.preventDefault e))
+          :href "#"}
+      (if (not= (:state @app-state) :playing) "New Game" "Restart")]
+     [:a {:href "#"
+          :class (str "button" (if (:mute-music @page-state) "" " game-over"))
+          :on-click (fn [e] (toggle-music!) (.preventDefault e))
+          :title (if (:mute-music @page-state) "Play music" "Mute music")}
+      [:i {:class "fa fa-music"}] " "]
+     ]
+    (let [board (:board @app-state)
+          pieces (:pieces @app-state)
+          valid-moves (:valid-moves @app-state)
+          squares (render-squares board valid-moves)
+          rendered-pieces (render-pieces pieces (:selected @app-state))
+          turn-indicator (render-turn-indicator (:turn @app-state) (:state @app-state))
+          base [:svg {:view-box "0 0 11 12"
+                      :width "100%"
+                      :style {:margin-top 20
+                              :max-width 500}}]]
+      (into base
+            (apply conj
+                   (apply conj
+                          (apply conj rendered-pieces (render-labels))
+                          turn-indicator)
+                   squares)))
+    [:div {:style {:font-size 10}}
+     (bottom-link "#" :about "about" (:bottom-section @page-state))
+     (bottom-link "#" :credits "credits" (:bottom-section @page-state))
+     (bottom-link "https://github.com/Zenith-One/thrones-and-bones-cljs" :none "source" nil)]
+    ]
+   [:div {:class "bottom-content-container"}
+    (bottom-content :about (:bottom-section @page-state)
+                    [:div
+                     [:h2 "A new take on an ancient game"]
+                     [:p "Thrones and Bones is an asymmetric board game created by "
+                      [:a {:href "http://www.louanders.com/"
+                           :target "_blank"} "Lou Anders"]
+                      " for his Thrones and Bones series. By asymmetric, I mean the play rather than the board. The white pieces are the Jarl (the white square, pronounced \"yarl\") and his guards. They are trying to get the Jarl safely to the edge of the board. Meanwhile the Black Draug (black square) and his draug minions are trying to capture the Jarl."]
+                     [:p "It is based on a medieval game called Tablut, which is in turn based on a still older game called Hnefatafl (game of the fist, or king's table). Some historians believe that, before chess took the world by storm, Hnefatafl and its many variants were the most popular board games in the western world."]])]
 ])
 
 (reagent/render-component [thrones-and-bones]
