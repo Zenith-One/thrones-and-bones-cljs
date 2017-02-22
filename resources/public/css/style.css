@@ -10,13 +10,14 @@
 
 .bottom-link-container {
     display: inline-block;
-    width: 33%;
+    width: 16%;
     text-align: center;
     text-transform: uppercase;
 }
 
 .bottom-link-container a,
-.bottom-link-container a:visited,
+.bottom-lin
+ k-container a:visited,
 .bottom-link-container a:active {
     text-decoration: none;
     color: #333;
