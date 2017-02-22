@@ -320,7 +320,7 @@
         y (y-func oy)
         terrain (get-in board [x y])
         piece (first (get-piece-at-pos pieces x y))]
-    (or (= terrain :mound)
+    (or (not= terrain :normal)
         (and (not (nil? piece)) (= (:team piece) :black)))))
 
 (defn white-leader-captured? [board pieces]
