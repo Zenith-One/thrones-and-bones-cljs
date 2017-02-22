@@ -32,7 +32,7 @@
 (defn stop-sound [key]
   (.pause (key sounds)))
 
-(defonce page-state (atom {:bottom-section :none
+(defonce page-state (atom {:bottom-section :game
                              :mute-music true
                              :mute-sound false}))
 (defn play-sfx [key]
@@ -91,11 +91,11 @@
 (defn starting-pieces []
   (let [black
         (map #(apply (partial new-piece :black) %)
-             [[7 4 true] ;; leader
+             [[0 4 true] ;; leader
               [3 0] [4 0] [5 0] [4 1]
-              [0 3] [0 4] [0 5] [1 4]
+              [0 3] [0 5] [1 4]
               [3 8] [4 8] [5 8] [4 7]
-              [8 3] [8 4] [8 5]])
+              [8 3] [8 4] [8 5] [7 4]])
         white
         (map #(apply (partial new-piece :white) %)
              [[4 4 true] ;; leader
