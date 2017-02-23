@@ -173,23 +173,24 @@
    [:div {:class "bottom-content-container"}
     (bottom-content
      :game (:bottom-section @page-state)
-     (let [pieces (:pieces @app-state)
-           state (:state @app-state)
-           valid-moves (:valid-moves @app-state)
-           squares (render-squares board valid-moves state logic/handle-click-square!)
-           rendered-pieces (render-pieces pieces (:selected @app-state)
-                                          logic/handle-click-piece!)
-           turn-indicator (render-turn-indicator (:turn @app-state) (:state @app-state))
-           base [:svg {:view-box "0 0 11 12"
-                       :width "100%"
-                       :style {:margin-top 20
-                               :max-width 500}}]]
-       (into base
-             (apply conj
-                    (apply conj
-                           (apply conj rendered-pieces (render-labels))
-                           turn-indicator)
-                    squares))))
+     [:div {:style {:text-align "center"}}
+      (let [pieces (:pieces @app-state)
+            state (:state @app-state)
+            valid-moves (:valid-moves @app-state)
+            squares (render-squares board valid-moves state logic/handle-click-square!)
+            rendered-pieces (render-pieces pieces (:selected @app-state)
+                                           logic/handle-click-piece!)
+            turn-indicator (render-turn-indicator (:turn @app-state) (:state @app-state))
+            base [:svg {:view-box "0 0 11 12"
+                        :width "100%"
+                        :style {:margin-top 20
+                                :max-width 500}}]]
+        (into base
+              (apply conj
+                     (apply conj
+                            (apply conj rendered-pieces (render-labels))
+                            turn-indicator)
+                     squares)))])
 
     (bottom-content :about (:bottom-section @page-state)
                     [:div
