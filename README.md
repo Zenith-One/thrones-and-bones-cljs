@@ -1,6 +1,6 @@
 # Thrones and Bones - CLJS
 
-Thrones and Bones, created by Lou Anders, immplemented by me.
+Thrones and Bones, created by Lou Anders, implemented by me.
 
 ## Live Demo
 
