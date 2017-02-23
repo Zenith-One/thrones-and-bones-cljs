@@ -1,6 +1,6 @@
 (ns thrones-bones.game-logic
-  (:require [reagent.core :as reagent :refer [atom]]
-            [thrones-bones.util :as util :refer [vec-join exists-in?]]))
+  (:require [reagent.core :refer [atom]]
+            [thrones-bones.util :refer [vec-join exists-in?]]))
 
 ;; Board building
 (def board-template
@@ -24,9 +24,8 @@
 (defn process-line [board-row]
   (vec (map template->square board-row)))
 
-(defn new-board []
-  (vec (map #(vec (map template->square %))
-            board-template)))
+(def board (vec (map #(vec (map template->square %))
+                     board-template)))
 
 ;; Initial Pieces
 (defn new-piece
@@ -53,10 +52,12 @@
     all-pieces))
 
 (defn new-game-state []
-  {:board (new-board)
-   :pieces (starting-pieces)
+  {:pieces (starting-pieces)
    :turn :white
-   :state :playing})
+   :state :playing
+   :history '()
+   :replay '()
+   })
 
 (defonce page-state (atom {:bottom-section :game
                            :mute-music true
@@ -84,6 +85,8 @@
   (if (not (:mute-sound @page-state))
     (play-sound key)))
 
+()
+
 ;; Win Checking
 (defn filter-leader [pieces team]
   (first (filter #(and (= (:team %) team) (:leader %)) pieces)))
@@ -108,6 +111,48 @@
 
 (defn change-turn! []
   (swap! app-state assoc :turn (if (= (:turn @app-state) :white) :black :white)))
+
+(defn finish-move-cleanup!
+  ([] (finish-move-cleanup! false))
+  ([replay-mode?]
+   (let [next-state (next-game-state (:pieces @app-state))]
+     (if (= :playing next-state)
+       (change-turn!)
+       (do
+         (if replay-mode?
+           (change-turn!)
+           (play-sfx :drum))
+         (swap! app-state assoc :state next-state))))))
+
+(defn clear-redo! []
+  (swap! app-state assoc :redo '()))
+
+(defn push-redo! []
+  (swap! app-state assoc :redo
+         (conj (:redo @app-state) (:pieces @app-state))))
+
+(defn push-undo! []
+  (swap! app-state assoc :undo
+         (conj (take 9 (:undo @app-state)) (:pieces @app-state))))
+
+(defn pop-redo! []
+  (if (not (empty? (:redo @app-state)))
+    (do
+      (push-undo!)
+      (play-sfx :piece-click)
+      (swap! app-state assoc :pieces (first (:redo @app-state)))
+      (finish-move-cleanup! true)
+      (swap! app-state assoc :redo (rest (:redo @app-state))))))
+
+(defn pop-undo! []
+  (if (not (empty? (:undo @app-state)))
+    (do
+      (push-redo!)
+      (change-turn!)
+      (play-sfx :piece-click)
+      (swap! app-state assoc :state :playing)
+      (swap! app-state assoc :pieces (first (:undo @app-state)))
+      (swap! app-state assoc :undo (rest (:undo @app-state))))))
 
 ;; ===== BOARD/PIECE CHECKING =====
 
@@ -248,8 +293,7 @@
       all-valid-moves)))
 
 (defn select-piece! [piece x y]
-  (let [board (:board @app-state)
-        pieces (:pieces @app-state)]
+  (let [pieces (:pieces @app-state)]
     (swap! app-state assoc :selected [x y])
     (play-sfx :piece-select)
     (if (and (= (:team piece) :black) (:leader piece))
@@ -297,8 +341,7 @@
       coords)))
 
 (defn do-captures! [coords]
-  (let [board (:board @app-state)
-        pieces (:pieces @app-state)
+  (let [pieces (:pieces @app-state)
         captures-up (check-captures pieces coords identity dec)
         captures-down (check-captures pieces coords identity inc)
         captures-left (check-captures pieces coords dec identity)
@@ -317,28 +360,26 @@
   (swap! app-state assoc :selected nil)
   (swap! app-state assoc :valid-moves [])
   (do-captures! end)
-  (let [next-state (next-game-state (:pieces @app-state))]
-    (if (= :playing next-state)
-      (change-turn!)
-      (do
-        (swap! app-state assoc :state next-state)
-        (play-sfx :drum)))))
+  (finish-move-cleanup!))
 
 (defn move-piece! [start end]
   (let [pieces (:pieces @app-state)
         [sx sy] start
         [ex ey] end
-        target-terrain (get-in (:board @app-state) [ex ey])
+        target-terrain (get-in board [ex ey])
         current-piece (first (get-piece-at-pos pieces sx sy))
         next-piece-pos (assoc current-piece :coords end)
         next-piece (if (and (= (:team next-piece-pos) :black)
                             (not= target-terrain :mound))
                      (assoc next-piece-pos :has-moved true)
                      next-piece-pos)]
-    (do (handle-post-move!
-         (conj (filter #(not= (:coords %) start) pieces) next-piece)
-         end)
-        (play-sfx :piece-click))))
+    (do
+      (push-undo!)
+      (clear-redo!)
+      (handle-post-move!
+       (conj (filter #(not= (:coords %) start) pieces) next-piece)
+       end)
+      (play-sfx :piece-click))))
 
 (defn handle-click-square! [x y]
   (if (= :playing (:state @app-state))

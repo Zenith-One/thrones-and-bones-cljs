@@ -1,7 +1,6 @@
 (ns thrones-bones.rendering
-  (:require [reagent.core :as reagent :refer [atom]]
-            [thrones-bones.game-logic :as logic :refer [page-state app-state]]
-            [thrones-bones.util :as util :refer [vec-join exists-in?]]))
+  (:require [thrones-bones.game-logic :as logic :refer [page-state app-state board]]
+            [thrones-bones.util :refer [exists-in?]]))
 
 
 ;; CONFIG
@@ -76,10 +75,10 @@
        click-handler))))
 
 (defn render-turn-indicator-circle [color state]
-  (render-piece [nil nil] {:coords [(if (= color :white) 2 6) -2]
-                    :team color
-                           :leader false}
-                #()))
+  (render-piece [nil nil] #()
+                {:coords [(if (= color :white) 2 6) -2]
+                 :team color
+                 :leader false}))
 
 (defn render-turn-indicator-text [turn state]
   [:text {:x 4 :y 0.6
@@ -135,11 +134,16 @@
   [:div {:class "container"}
    [:center [:h1 "Thrones and Bones"]
     [:div {:style {:margin-top 25 :margin-bottom 20}}
+
      [:a {:href "#"
           :class (str "button" (if (:mute-sound @page-state) "" " game-over"))
           :on-click (fn [e] (toggle-sound!) (.preventDefault e))
           :title (if (:mute-sound @page-state) "Enable sound" "Disable sound")}
       [:i {:class "fa fa-volume-up"}] " "]
+     [:a {:href "#"
+          :class (str "button" (if (empty? (:undo @app-state)) "" " game-over"))
+          :on-click (fn [e] (.preventDefault e) (logic/pop-undo!))}
+      [:i {:class "fa fa-undo"}] " Undo"]
      [:a {:class (str "button"
                       (if (= (:state @app-state) :playing)
                         ""
@@ -147,6 +151,10 @@
           :on-click (fn [e] (logic/new-game!) (.preventDefault e))
           :href "#"}
       (if (not= (:state @app-state) :playing) "New Game" "Restart")]
+     [:a {:href "#"
+          :class (str "button" (if (empty? (:redo @app-state)) "" " game-over"))
+          :on-click (fn [e] (.preventDefault e) (logic/pop-redo!))}
+      "Redo " [:i {:class "fa fa-repeat"}]]
      [:a {:href "#"
           :class (str "button" (if (:mute-music @page-state) "" " game-over"))
           :on-click (fn [e] (toggle-music!) (.preventDefault e))
@@ -165,8 +173,7 @@
    [:div {:class "bottom-content-container"}
     (bottom-content
      :game (:bottom-section @page-state)
-     (let [board (:board @app-state)
-           pieces (:pieces @app-state)
+     (let [pieces (:pieces @app-state)
            state (:state @app-state)
            valid-moves (:valid-moves @app-state)
            squares (render-squares board valid-moves state logic/handle-click-square!)
