@@ -1,10 +1,10 @@
-# thrones-bones
+# Thrones and Bones - CLJS
 
-FIXME: Write a one-line description of your library/project.
+Thrones and Bones, created by Lou Anders, implemented by me.
 
-## Overview
+## Live Demo
 
-FIXME: Write a paragraph about the library/project and highlight its goals.
+You can check out this game [here](https://zenith-one.github.io/thrones-and-bones-cljs/).
 
 ## Setup
 
