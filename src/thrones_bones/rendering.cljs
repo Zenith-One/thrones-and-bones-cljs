@@ -93,15 +93,15 @@
    (render-turn-indicator-text turn state)])
 
 (defn row-labels [x]
-  (map (fn [y] [:text {:x x :y (+ y 2.6) :font-size 0.5} (str (inc y))])
+  (map (fn [y] [:text {:x x :y (+ y 2.63) :font-size 0.5} (str (- 10 (inc y)))])
        (range 9)))
 
 (defn column-labels [y]
-  [:text {:x 1.2 :y y :text-length 9 :font-size 0.5} "ABCDEFGHI"])
+  [:text {:x 1.3 :y y :text-length 8.85 :font-size 0.5} "ABCDEFGHI"])
 
 (defn render-labels []
   (concat (row-labels 10.1)
-          (row-labels 0.6)
+          (row-labels 0.55)
    [(column-labels 1.8)] [(column-labels 11.4)]))
 
 (defn select-bottom-content! [key]
@@ -109,12 +109,14 @@
 
 (defn bottom-link
   ([href content-key label current] (bottom-link href content-key label current true))
-  ([href content-key label current shouldPreventDefault]
+  ([href content-key label current should-prevent-default]
    [:span {:class "bottom-link-container"
            }
     [:a {:href href :class (if (= content-key current) "active" "")
-         :on-click #(do (if shouldPreventDefault (.preventDefault %))
-                        (select-bottom-content! content-key))} label]]))
+         :on-click #(if should-prevent-default
+                      (do (.preventDefault %)
+                          (select-bottom-content! content-key)))
+         :target (if should-prevent-default "self" "_blank")} label]]))
 
 (defn bottom-content [key current el]
   (if (= key current)

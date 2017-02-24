@@ -1,3 +1,7 @@
+* {
+    font-family: open-sans, sans-serif;
+}
+
 .container {
     width: 70%;
     max-width: 550px;
@@ -11,23 +15,26 @@
 .bottom-link-container {
     display: inline-block;
     width: 16%;
+    min-width: 80px;
+    margin-top: 20px;
+    font-weight: bold;
     text-align: center;
     text-transform: uppercase;
 }
 
 .bottom-link-container a,
-.bottom-lin
- k-container a:visited,
+.bottom-link-container a:visited,
 .bottom-link-container a:active {
     text-decoration: none;
     color: #333;
 }
 
-.bottom-link-container a::before { content: "[" }
-.bottom-link-container a::after { content: "]"; }
 
 .bottom-link-container a:hover,
-.bottom-link-container a.active { text-decoration: underline; }
+.bottom-link-container a.active { 
+    text-decoration: underline;
+    font-size: 1.1em;
+}
 
 .bottom-content-container h2 { text-align: center; }
 
