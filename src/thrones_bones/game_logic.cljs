@@ -119,8 +119,7 @@
      (if (= :playing next-state)
        (change-turn!)
        (do
-         (if replay-mode?
-           (change-turn!)
+         (if (not replay-mode?)
            (play-sfx :drum))
          (swap! app-state assoc :state next-state))))))
 
@@ -140,19 +139,21 @@
     (do
       (push-undo!)
       (play-sfx :piece-click)
-      (swap! app-state assoc :pieces (first (:redo @app-state)))
-      (finish-move-cleanup! true)
-      (swap! app-state assoc :redo (rest (:redo @app-state))))))
+      (swap! app-state assoc
+             :pieces (first (:redo @app-state))
+             :redo (rest (:redo @app-state)))
+      (finish-move-cleanup! true))))
 
 (defn pop-undo! []
   (if (not (empty? (:undo @app-state)))
     (do
       (push-redo!)
-      (change-turn!)
+      (if (= (:state @app-state) :playing) (change-turn!))
       (play-sfx :piece-click)
-      (swap! app-state assoc :state :playing)
-      (swap! app-state assoc :pieces (first (:undo @app-state)))
-      (swap! app-state assoc :undo (rest (:undo @app-state))))))
+      (swap! app-state assoc
+             :state :playing
+             :pieces (first (:undo @app-state))
+             :undo (rest (:undo @app-state))))))
 
 ;; ===== BOARD/PIECE CHECKING =====
 
@@ -228,52 +229,24 @@
         true
         (and valid-terrain is-empty)))))
 
-(defn get-valid-moves-up [board pieces piece predicate]
-  (let [coords (:coords piece)
-        [x y] coords]
-    (if (<= y 0)
-      []
-      (let [[mx my] (my-search board pieces predicate
-                               (get-next-coords coords second dec) second dec)]
-        (for [fx [x]
-              fy (range my y)]
-          [fx fy])))))
+(defn sensible-range [a b]
+  (if (< a b)
+    (range a b)
+    (range b a)))
 
-(defn get-valid-moves-down [board pieces piece predicate]
-  (let [coords (:coords piece)
-        [x y] coords]
-    (if (>= y 8)
-      []
-      (let [[mx my] (my-search board pieces predicate
-                               (get-next-coords coords second inc)
-                               second inc)]
-        (for [fx [x]
-              fy (range (inc y) (inc my))]
-          [fx fy])))))
+(defn sensible-range-inclusive [a b]
+  (if (< a b)
+    (range a (inc b))
+    (range b (inc a))))
 
-(defn get-valid-moves-left [board pieces piece predicate]
+(defn get-valid-moves-new [board pieces piece predicate pos next-fn]
   (let [coords (:coords piece)
-        [x y] coords]
-    (if (<= x 0)
-      []
-      (let [[mx my] (my-search board pieces predicate
-                               (get-next-coords coords first dec)
-                               first dec)]
-        (for [fx (range mx x)
-              fy [y]]
-          [fx fy])))))
-
-(defn get-valid-moves-right [board pieces piece predicate]
-  (let [coords (:coords piece)
-        [x y] coords]
-    (if (>= x 8)
-      []
-      (let [[mx my] (my-search board pieces predicate
-                               (get-next-coords coords first inc)
-                               first inc)]
-        (for [fx (range (inc x) (inc mx))
-              fy [y]]
-          [fx fy])))))
+        [x y] coords
+        [mx my] (my-search board pieces predicate
+                           (get-next-coords coords pos next-fn) pos next-fn)]
+    (for [fx (if (= pos first) (sensible-range-inclusive x mx) [x])
+          fy (if (= pos second) (sensible-range-inclusive y my) [y])]
+      [fx fy])))
 
 (defn get-valid-moves [board pieces piece]
   (let [team (:team piece)
@@ -281,12 +254,12 @@
                       get-white-piece-predicate
                       get-black-piece-predicate)
         predicate (get-pred-fn piece)
-        valid-up (get-valid-moves-up board pieces piece predicate)
-        valid-down (get-valid-moves-down board pieces piece predicate)
-        valid-left (get-valid-moves-left board pieces piece predicate)
-        valid-right (get-valid-moves-right board pieces piece predicate)
         all-valid-moves
-        (concat valid-up valid-down valid-left valid-right)]
+        (apply concat
+         (map #(apply (fn [pos next-fn]
+                        (get-valid-moves-new board pieces piece predicate pos next-fn))
+                      %)
+              [[first inc] [first dec] [second inc] [second dec]]))]
     (if (or (not (= team :white))
             (not (:leader piece)))
       (remove #(= [4 4] %) all-valid-moves)
@@ -333,32 +306,34 @@
 (defn white-leader-captured? [board pieces]
   (let [wl (filter-leader pieces :white)
         coords (:coords wl)
-        blocked-up (white-leader-blocked? board pieces coords identity dec)
-        blocked-down (white-leader-blocked? board pieces coords identity inc)
-        blocked-left (white-leader-blocked? board pieces coords dec identity)
-        blocked-right (white-leader-blocked? board pieces coords inc identity)]
-    (if (and blocked-up blocked-down blocked-left blocked-right)
-      coords)))
+        is-blocked
+        (reduce #(and %1 %2) 
+               (map
+                #(apply (fn [x-func y-func]
+                          (white-leader-blocked? board pieces coords x-func y-func))
+                        %)
+                [[identity dec] [identity inc] [dec identity] [inc identity]]))]
+    (if is-blocked coords)))
 
 (defn do-captures! [coords]
   (let [pieces (:pieces @app-state)
-        captures-up (check-captures pieces coords identity dec)
-        captures-down (check-captures pieces coords identity inc)
-        captures-left (check-captures pieces coords dec identity)
-        captures-right (check-captures pieces coords inc identity)
-        white-leader (white-leader-captured? board pieces) 
         all-captures
           (filter #(not (empty? %))
-                  [captures-up captures-down captures-left captures-right white-leader])
+                  (conj (map #(apply (fn [x-func y-func]
+                                       (check-captures pieces coords x-func y-func)) %)
+                             [[identity dec] [identity inc]
+                              [dec identity] [inc identity]])
+                        (white-leader-captured? board (:pieces @app-state))))
         new-pieces
         (filter #(not (exists-in? all-captures (:coords %)))
                 (:pieces @app-state))]
     (swap! app-state assoc :pieces new-pieces)))
 
 (defn handle-post-move! [pieces end]
-  (swap! app-state assoc :pieces pieces)
-  (swap! app-state assoc :selected nil)
-  (swap! app-state assoc :valid-moves [])
+  (swap! app-state assoc
+         :pieces pieces
+         :selected nil
+         :valid-moves [])
   (do-captures! end)
   (finish-move-cleanup!))
 
@@ -368,11 +343,10 @@
         [ex ey] end
         target-terrain (get-in board [ex ey])
         current-piece (first (get-piece-at-pos pieces sx sy))
-        next-piece-pos (assoc current-piece :coords end)
-        next-piece (if (and (= (:team next-piece-pos) :black)
-                            (not= target-terrain :mound))
-                     (assoc next-piece-pos :has-moved true)
-                     next-piece-pos)]
+        next-piece (assoc current-piece
+                          :coords end
+                          :has-moved (and (= (:team current-piece) :black)
+                                          (not= target-terrain :mound)))]
     (do
       (push-undo!)
       (clear-redo!)
@@ -400,6 +374,6 @@
       (if (is-selecting-valid-piece? selected turn piece)
         (select-piece! piece x y))      
       (if (is-deselecting-piece? selected piece) ;; clicking selected piece deselects
-        (do (swap! app-state assoc :selected nil)
-            (swap! app-state assoc :valid-moves [])))
-        )))
+        (swap! app-state assoc
+               :selected nil
+               :valid-moves [])))))

@@ -1,6 +1,6 @@
 (ns thrones-bones.rendering
   (:require [thrones-bones.game-logic :as logic :refer [page-state app-state board]]
-            [thrones-bones.util :refer [exists-in?]]))
+            [thrones-bones.util :refer [exists-in? toggle!]]))
 
 
 ;; CONFIG
@@ -121,13 +121,13 @@
     el))
 
 (defn toggle-music! []
-  (swap! page-state assoc :mute-music (not (:mute-music @page-state)))
-  (if (:mute-music @page-state)
+  
+  (if (toggle! page-state :mute-music)
     (logic/stop-sound :music)
     (logic/play-sound :music)))
 
 (defn toggle-sound! []
-  (swap! page-state assoc :mute-sound (not (:mute-sound @page-state))))
+  (toggle! page-state :mute-sound))
 
 ;; App Component
 (defn app-component []

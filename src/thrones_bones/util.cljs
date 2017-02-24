@@ -9,3 +9,7 @@
     false
     (contains? (zipmap seq (repeat true)) item)))
 
+(defn toggle! [a k]
+  "Given atom a and key k whose value is a boolean, 
+   swaps k in a with the opposite value, and returns the new value of (k a)"
+  (k (swap! a assoc k (not (k @a)))))

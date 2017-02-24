@@ -15,5 +15,5 @@
   #_(println "selected" (:selected @app-state))
   #_(println app-state)
   #_(println (swap! app-state assoc :blah 1234))
-  (println (empty? (rest '(1))))
+  #_(println (empty? (rest '(1))))
 )

@@ -1,1 +1,1 @@
-lein clean && lein cljsbuild once min
+lein clean && lein cljsbuild once min && git status
