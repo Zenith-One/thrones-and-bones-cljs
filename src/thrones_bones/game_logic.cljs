@@ -53,7 +53,7 @@
 
 (defn new-game-state []
   {:pieces (starting-pieces)
-   :turn :white
+   :turn :black
    :state :playing
    :history '()
    :replay '()
@@ -84,8 +84,6 @@
 (defn play-sfx [key]
   (if (not (:mute-sound @page-state))
     (play-sound key)))
-
-()
 
 ;; Win Checking
 (defn filter-leader [pieces team]
@@ -132,7 +130,7 @@
 
 (defn push-undo! []
   (swap! app-state assoc :undo
-         (conj (take 9 (:undo @app-state)) (:pieces @app-state))))
+         (conj (:undo @app-state) (:pieces @app-state))))
 
 (defn pop-redo! []
   (if (not (empty? (:redo @app-state)))
@@ -191,7 +189,7 @@
                   oy))]
     [x y]))
 
-(defn my-search [board pieces predicate coords pos next-fn]
+(defn my-search [{:keys [board pieces predicate coords pos next-fn]}]
   "Given a board, a seq of pieces, a predicate function 
    for filtering squares, a vector tuple of coordinates, 
    a positional function (e.g. first or second) and a 
@@ -205,8 +203,9 @@
            (>= (second coords) 0))
     (if (predicate (get-in board coords)
                    (get-piece-at-pos pieces (first coords) (second coords)))
-      (recur board pieces predicate (get-next-coords coords pos next-fn)
-             pos next-fn)
+      (recur {:board board :pieces pieces :predicate predicate
+              :coords (get-next-coords coords pos next-fn)
+              :pos pos :next-fn next-fn})
       (get-next-coords coords pos (reverse-direction next-fn))
       )
     (get-default coords)))
@@ -239,11 +238,12 @@
     (range a (inc b))
     (range b (inc a))))
 
-(defn get-valid-moves-new [board pieces piece predicate pos next-fn]
-  (let [coords (:coords piece)
-        [x y] coords
-        [mx my] (my-search board pieces predicate
-                           (get-next-coords coords pos next-fn) pos next-fn)]
+(defn get-valid-moves-for-direction [{:keys [board pieces piece predicate pos next-fn]
+                                      {:keys [coords]} :piece}]
+  (let [[x y] coords
+        [mx my] (my-search {:board board :pieces pieces :predicate predicate
+                            :coords (get-next-coords coords pos next-fn)
+                            :pos pos :next-fn next-fn})]
     (for [fx (if (= pos first) (sensible-range-inclusive x mx) [x])
           fy (if (= pos second) (sensible-range-inclusive y my) [y])]
       [fx fy])))
@@ -257,7 +257,9 @@
         all-valid-moves
         (apply concat
          (map #(apply (fn [pos next-fn]
-                        (get-valid-moves-new board pieces piece predicate pos next-fn))
+                        (get-valid-moves-for-direction {:board board :pieces pieces
+                                                        :piece piece :predicate predicate
+                                                        :pos pos :next-fn next-fn}))
                       %)
               [[first inc] [first dec] [second inc] [second dec]]))]
     (if (or (not (= team :white))

@@ -4,8 +4,8 @@
 
 
 ;; CONFIG
-(def white-color "#fafafa")
-(def black-color "#444")
+(def piece-color {:black "#444"
+                  :white "#fafafa"})
 (def terrain-color {:normal "#efeada"
                     :mound "#908778"
                     :castle "#bdb58e"})
@@ -18,37 +18,34 @@
 
 ;; ========== RENDERING ==========
 ;; Piece Rendering
-(defn circle-conf [x y fill selected click-handler]
+(defn circle-conf [{:keys [x y fill selected click-handler]}]
   {:r 0.3 :cx (+ x 0.45) :cy (+ y 0.45)
    :fill fill :stroke (if selected "#f00"  "#000")
    :stroke-width 0.015
    :on-click #(click-handler (- x 1) (- y 2))})
 
-(defn rect-conf [x y fill selected click-handler]
+(defn rect-conf [{:keys [x y fill selected click-handler]}]
   {:height 0.7 :width 0.7 :x (+ x 0.1) :y (+ y 0.1)
    :fill fill :stroke (if selected "#f00" "#000")
    :stroke-width 0.015
    :on-click #(click-handler (- x 1) (- y 2))})
 
-(defn render-piece [selected click-handler piece]
-  (let [[ox oy] (:coords piece)
-        [t c] (if (:leader piece)
+(defn render-piece [[selected-x selected-y]
+                    click-handler
+                    {:keys [team] :as piece
+                     [ox oy] :coords}]
+  (let [[t c] (if (:leader piece)
                 [:rect rect-conf]
-                [:circle circle-conf])
-        [sx sy] selected
-        y (+ oy 2)
-        x (+ ox 1)
-        selected (logic/is-the-piece-here? piece sx sy)]
-    (case (:team piece)
-      :black [t (c x y black-color selected click-handler)]
-      :white [t (c x y white-color selected click-handler)]
-      nil)))
+                [:circle circle-conf])]    
+    [t (c {:x (+ ox 1) :y (+ oy 2) :click-handler click-handler
+           :selected (logic/is-the-piece-here? piece selected-x selected-y)
+           :fill (team piece-color)})]))
 
 (defn render-pieces [pieces selected click-handler]
   (map (partial render-piece selected click-handler) pieces))
 
 ;; Board Rendering
-(defn render-square [x y color stroke click-handler]
+(defn render-square [{:keys [x y color stroke click-handler]}]
   [:rect {:width 0.9
           :height 0.9
           :fill color
@@ -59,7 +56,7 @@
           :on-click #(click-handler (- x 1) (- y 2))
           }])
 
-(defn render-squares [board valid-moves state click-handler]
+(defn render-squares [{:keys [board valid-moves state click-handler]}]
   (for [x (range 9)
         y (range 9)]
     (let [is-valid-move (exists-in? valid-moves [x y])
@@ -68,15 +65,18 @@
                       game-over-color
                       (if is-valid-move selected-color terrain-color))
           color (terrain color-set)]
-      (render-square (+ x 1) (+  y 2) color
-       (if (exists-in? valid-moves [x y])
-         "#66a"
-         "#666")
-       click-handler))))
+      (render-square {:x  (+ x 1) :y (+  y 2)
+                      :color color
+                      :stroke
+                      (if (exists-in? valid-moves [x y])
+                        "#66a"
+                        "#666")
+                      :click-handler
+                      click-handler}))))
 
 (defn render-turn-indicator-circle [color state]
   (render-piece [nil nil] #()
-                {:coords [(if (= color :white) 2 6) -2]
+                {:coords [(if (= color :black) 2 6) -2]
                  :team color
                  :leader false}))
 
@@ -144,18 +144,27 @@
       [:i {:class "fa fa-volume-up"}] " "]
      [:a {:href "#"
           :class (str "button" (if (empty? (:undo @app-state)) "" " game-over"))
-          :on-click (fn [e] (.preventDefault e) (logic/pop-undo!))}
+          :on-click (fn [e]
+                      (.preventDefault e)
+                      (logic/pop-undo!)
+                      (select-bottom-content! :game))}
       [:i {:class "fa fa-undo"}] " Undo"]
      [:a {:class (str "button"
                       (if (= (:state @app-state) :playing)
                         ""
                         " game-over"))
-          :on-click (fn [e] (logic/new-game!) (.preventDefault e))
+          :on-click (fn [e]
+                      (logic/new-game!)
+                      (.preventDefault e)
+                      (select-bottom-content! :game))
           :href "#"}
       (if (not= (:state @app-state) :playing) "New Game" "Restart")]
      [:a {:href "#"
           :class (str "button" (if (empty? (:redo @app-state)) "" " game-over"))
-          :on-click (fn [e] (.preventDefault e) (logic/pop-redo!))}
+          :on-click (fn [e]
+                      (.preventDefault e)
+                      (logic/pop-redo!)
+                      (select-bottom-content! :game))}
       "Redo " [:i {:class "fa fa-repeat"}]]
      [:a {:href "#"
           :class (str "button" (if (:mute-music @page-state) "" " game-over"))
@@ -179,7 +188,8 @@
       (let [pieces (:pieces @app-state)
             state (:state @app-state)
             valid-moves (:valid-moves @app-state)
-            squares (render-squares board valid-moves state logic/handle-click-square!)
+            squares (render-squares {:board  board :valid-moves valid-moves
+                                     :state state :click-handler logic/handle-click-square!})
             rendered-pieces (render-pieces pieces (:selected @app-state)
                                            logic/handle-click-piece!)
             turn-indicator (render-turn-indicator (:turn @app-state) (:state @app-state))
@@ -197,21 +207,21 @@
     (bottom-content :about (:bottom-section @page-state)
                     [:div
                      [:h2 "A new take on an ancient game"]
-                     [:p "Thrones and Bones is an asymmetric board game created by "
+                     [:p "Thrones and Bones is an asymmetrical board game created by "
                       [:a {:href "http://www.louanders.com/"
                            :target "_blank"} "Lou Anders"]
-                      " for his Thrones and Bones series. By asymmetric, I mean the play rather than the board. The white pieces are the Jarl (the white square, pronounced \"yarl\") and his guards. They are trying to get the Jarl safely to the edge of the board. Meanwhile the Black Draug (black square) and his draug minions are trying to capture the Jarl."]
-                     [:p "It is based on a medieval game called Tablut, which is in turn based on a still older game called Hnefatafl (game of the fist, or king's table). Some historians believe that, before chess took the world by storm, Hnefatafl and its many variants were the most popular board games in the western world."]
+                      " for his Thrones and Bones series. By asymmetrical, I mean the play rather than the board. The white pieces are the Jarl (the white square, pronounced \"yarl\") and his guards. They are trying to get the Jarl safely to the edge of the board. Meanwhile the Black Draug (black square) and his draug minions are trying to capture the Jarl."]
+                     [:p "It is based on a medieval game called Tablut, which is in turn based on a still older game called Hnefatafl (game of the fist, or king's table, depending on which translation you prefer). Some historians believe that, before chess took the world by storm, Hnefatafl and its many variants were the most popular board games in the western world."]
                      [:p "If you are interested in learning more about Hnefatafl, I suggest checking out "
                       [:a {:href "http://tafl.cyningstan.com/"
                            :target "_blank"}
                        "Hnefatafl - The Game of the Vikings"]
-                      ". There is a lot of really interesting information there."]])
+                      ". There is a wealth of interesting information there."]])
 
     (bottom-content :rules (:bottom-section @page-state)
                     [:div
                      [:h2 "Rules"]
-                     [:p "The majority of the rules for this game are standard for hnefatafl games in general, which you can check out "
+                     [:p "The majority of the rules for this game are standard for Hnefatafl games in general, which you can check out "
                       [:a {:href "http://tafl.cyningstan.com/page/20/a-rule-book-for-hnefatafl"} "here"] ". Here are the basics:"
                       [:ol
                        [:li "The Jarl player (white) goes first. The Draug player (black) goes second."]
@@ -244,15 +254,15 @@
                      [:h2 "Credits"]
                      [:p "Of course, the most credit for this game goes to "
                       [:a {:href "http://www.louanders.com/" :target "_blank"}
-                       "Lou Anders "]
-                      "for making this variant of Hnefatafl, and in turn the various "
+                       "Lou Anders"]
+                      " for making this variant of Hnefatafl, and in turn the various "
                       "people and peoples involved with "
                       [:a {:href "http://tafl.cyningstan.com/page/3/the-history-of-hnefatafl" :target "_blank"} "the history of Hnefatafl"] "."]
                      [:p "Additionally, some of the original inspiration for making "
                       "this style of game the way I have made it came from a "
                       [:a {:href "https://www.youtube.com/watch?v=pIiOgTwjbes"
-                           :target "_blank"} "video "]
-                      "on how to implement Tic-Tac-Toe in ClojureScript."]
+                           :target "_blank"} "video"]
+                      " on how to implement Tic-Tac-Toe in ClojureScript."]
                      [:p "Finally, I used several resources which I did not "
                       "create to get the job done:"]
                      [:h3 "Code-Related"]
